@@ -1,0 +1,6 @@
+# Copy to `.dev.vars` for local `wrangler dev`. Never commit `.dev.vars`.
+# In prod, set these via `wrangler secret put <NAME>`.
+
+TELEGRAM_BOT_TOKEN="your-bot-token-from-botfather"
+TELEGRAM_WEBHOOK_SECRET="random-string-used-as-X-Telegram-Bot-Api-Secret-Token"
+ADMIN_BOOTSTRAP_TOKEN="random-string-the-admin-sends-as-/start-<token>-to-claim-the-bot"

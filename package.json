@@ -1,0 +1,21 @@
+{
+  "name": "pony-help",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Worker that exposes a remote MCP server for Claude to escalate issues to a human via Telegram.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "typecheck": "tsc --noEmit",
+    "tg:set-webhook": "node scripts/set-telegram-webhook.mjs",
+    "tg:delete-webhook": "node scripts/delete-telegram-webhook.mjs",
+    "accounts:mint": "node scripts/mint-account.mjs"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250121.0",
+    "typescript": "^5.6.3",
+    "wrangler": "^3.99.0"
+  }
+}
