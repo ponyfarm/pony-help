@@ -15,7 +15,7 @@ if (!name) {
   process.exit(1);
 }
 
-const remoteFlag = args.includes("--local") ? "--local" : "--remote";
+const isLocal = args.includes("--local");
 const wranglerEnv = args.find((a) => a.startsWith("--env="));
 
 const token = randomBytes(32).toString("hex");
@@ -28,10 +28,10 @@ const wranglerArgs = [
   "key",
   "put",
   "--binding=PONY_KV",
-  remoteFlag,
   key,
   value,
 ];
+if (isLocal) wranglerArgs.push("--local");
 if (wranglerEnv) wranglerArgs.push(wranglerEnv);
 
 const res = spawnSync("npx", wranglerArgs, { stdio: ["inherit", "pipe", "inherit"] });
