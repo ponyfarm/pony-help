@@ -25,7 +25,7 @@ const ESCALATE_DESCRIPTION = [
   "When the situation is handled, call `mark_resolved` so Sam knows it landed.",
 ].join("\n");
 
-const ASK_SAM_DESCRIPTION = [
+const ASK_REVIEWER_DESCRIPTION = [
   "Forward an explicit question from Mickey (the user) to Sam via Telegram.",
   "Use when Mickey says things like 'ask Sam', 'check with Sam', 'get Sam's opinion'.",
   "Translate the question to English before calling if it's in another language — the reviewer reads English.",
@@ -70,8 +70,8 @@ export const TOOL_DEFS = [
     },
   },
   {
-    name: "ask_sam",
-    description: ASK_SAM_DESCRIPTION,
+    name: "ask_reviewer",
+    description: ASK_REVIEWER_DESCRIPTION,
     inputSchema: {
       type: "object",
       properties: {
@@ -100,7 +100,7 @@ export const TOOL_DEFS = [
     inputSchema: {
       type: "object",
       properties: {
-        issue_id: { type: "string", description: "The id returned by escalate_issue or ask_sam." },
+        issue_id: { type: "string", description: "The id returned by escalate_issue or ask_reviewer." },
         outcome: { type: "string", description: "One sentence on how it was resolved." },
       },
       required: ["issue_id", "outcome"],
@@ -117,7 +117,7 @@ export async function callTool(
   switch (name) {
     case "escalate_issue":
       return await escalateIssue(env, args, "auto", account);
-    case "ask_sam":
+    case "ask_reviewer":
       return await escalateIssue(
         env,
         { summary: args.question, context: args.context },

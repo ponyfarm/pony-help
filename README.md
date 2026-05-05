@@ -5,7 +5,7 @@ A Cloudflare Worker that exposes a remote MCP server. When the connected user's 
 Use case: you (the reviewer) want to stay in the loop while someone you're helping uses Claude — without sitting next to them. Their Claude pages you on Telegram when it's stuck or about to do something risky. You answer when you have a moment. Their Claude relays your guidance and asks them to approve before acting.
 
 ```
-User's Claude  ──/mcp──▶  Cloudflare Worker  ──Telegram API──▶  Supervisor
+User's Claude  ──/mcp──▶  Cloudflare Worker  ──Telegram API──▶  Reviewer
                                 ▲                                    │
                                 └──── /tg/webhook  ◀─────────────────┘
                                             (replies)
@@ -18,7 +18,7 @@ Four MCP tools, exposed at `https://<worker>/mcp`:
 | Tool | When the LLM should call it |
 | --- | --- |
 | `escalate_issue` | Auto-fired when stuck, blocked, ambiguous, or about to do something destructive. Returns an `issue_id` immediately. |
-| `ask_sam` | Explicit, user-initiated — "ask my reviewer". Same plumbing as `escalate_issue`. |
+| `ask_reviewer` | Explicit, user-initiated — "ask my reviewer". Same plumbing as `escalate_issue`. |
 | `check_responses` | Polls for new replies. Should be called between steps after escalating. |
 | `mark_resolved` | Closes the loop and sends a ✅ Telegram follow-up. |
 
@@ -129,9 +129,9 @@ Send the user this message — they paste it into a Claude Code session:
 >    claude mcp add --transport http pony-help https://pony-help.<subdomain>.workers.dev/mcp --header "Authorization: Bearer <USER_TOKEN>"
 >    ```
 >
-> 2. List the tools from `pony-help` and confirm you see `escalate_issue`, `ask_sam`, `check_responses`, and `mark_resolved`.
+> 2. List the tools from `pony-help` and confirm you see `escalate_issue`, `ask_reviewer`, `check_responses`, and `mark_resolved`.
 >
-> 3. Test it: call `ask_sam` with the question *"Setting up pony-help — please reply so we know it works."* Wait a moment, then call `check_responses`. Show me the reply verbatim and ask whether to proceed.
+> 3. Test it: call `ask_reviewer` with the question *"Setting up pony-help — please reply so we know it works."* Wait a moment, then call `check_responses`. Show me the reply verbatim and ask whether to proceed.
 >
 > Going forward:
 > - If you get stuck, blocked, or are about to do something destructive, call `escalate_issue` automatically.
@@ -211,7 +211,7 @@ KV layout:
 
 | Key | Value |
 | --- | --- |
-| `chat_id` | Supervisor's Telegram chat id (set on first valid `/start`) |
+| `chat_id` | Reviewer's Telegram chat id (set on first valid `/start`) |
 | `account:<token>` | `{ name, created_at }` |
 | `issue:<id>` | Full issue blob with replies |
 | `tgmsg:<message_id>` | Issue id, for routing reply threads |

@@ -3,6 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "description": "Cloudflare Worker that exposes a remote MCP server for Claude to escalate issues to a human via Telegram.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ponyfarm/pony-help.git"
+  },
+  "homepage": "https://github.com/ponyfarm/pony-help#readme",
+  "bugs": "https://github.com/ponyfarm/pony-help/issues",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
