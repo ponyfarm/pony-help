@@ -17,7 +17,10 @@
     "PROTOCOL_VERSION": "2024-11-05"
   }
   // Secrets (set via `wrangler secret put`):
-  //   TELEGRAM_BOT_TOKEN     - from @BotFather
+  //   TELEGRAM_BOT_TOKEN      - from @BotFather
   //   TELEGRAM_WEBHOOK_SECRET - random, used to verify webhook calls
-  //   ADMIN_BOOTSTRAP_TOKEN  - one-time token used to claim chat_id via /start <token>
+  //   ADMIN_BOOTSTRAP_TOKEN   - one-time token used to claim chat_id via /start <token>
+  //   REVIEWER_NAME           - optional. Reviewer's display name (e.g. "Sam") used
+  //                             in reply framing shown to users. Falls back to
+  //                             "the reviewer" if unset.
 }

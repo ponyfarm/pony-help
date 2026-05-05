@@ -4,6 +4,7 @@ export interface Env {
   TELEGRAM_WEBHOOK_SECRET: string;
   ADMIN_BOOTSTRAP_TOKEN: string;
   PROTOCOL_VERSION: string;
+  REVIEWER_NAME?: string;
 }
 
 export type IssueStatus = "open" | "resolved";

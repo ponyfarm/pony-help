@@ -18,6 +18,8 @@ const ESCALATE_DESCRIPTION = [
   "• You hit an authentication, permission, or external-system boundary you can't cross.",
   "• You suspect data loss, a regression, or a security concern.",
   "",
+  "Write `summary` and `context` in English. If the user is communicating in another language, translate to English before calling — the reviewer reads English.",
+  "",
   "Returns immediately with an issue_id. Sam will reply asynchronously via Telegram.",
   "After escalating, call `check_responses` between steps to pick up Sam's guidance.",
   "When the situation is handled, call `mark_resolved` so Sam knows it landed.",
@@ -26,6 +28,7 @@ const ESCALATE_DESCRIPTION = [
 const ASK_SAM_DESCRIPTION = [
   "Forward an explicit question from Mickey (the user) to Sam via Telegram.",
   "Use when Mickey says things like 'ask Sam', 'check with Sam', 'get Sam's opinion'.",
+  "Translate the question to English before calling if it's in another language — the reviewer reads English.",
   "Returns immediately with an issue_id. Poll `check_responses` for Sam's answer.",
 ].join("\n");
 
@@ -34,6 +37,7 @@ const CHECK_RESPONSES_DESCRIPTION = [
   "Call this between steps after escalating, before asking the user to wait, or whenever you think Sam may have responded.",
   "Returns only undelivered replies and marks them delivered.",
   "When a reply arrives, present it to Mickey and ASK her to approve, modify, or reject before acting.",
+  "Feel free to translate the reply into the user's language and rephrase it simply/clearly while preserving the reviewer's intent.",
 ].join("\n");
 
 const MARK_RESOLVED_DESCRIPTION = [
@@ -149,7 +153,7 @@ async function escalateIssue(
       content: [
         {
           type: "text",
-          text: "Sam hasn't claimed the bot yet. Tell Mickey: 'pony-help bot is not configured — Sam needs to send /start <token> to @pony_help_bot.'",
+          text: "The reviewer hasn't claimed the bot yet. Tell the user: 'pony-help is not yet configured — the reviewer needs to send /start <bootstrap-token> to the bot in Telegram.'",
         },
       ],
     };
@@ -187,7 +191,7 @@ async function escalateIssue(
           {
             issue_id: issue.id,
             status: "sent",
-            note: "Sam was notified via Telegram. Continue working if you can; call check_responses between steps.",
+            note: "The reviewer was notified via Telegram. Continue working if you can; call check_responses between steps.",
           },
           null,
           2,
@@ -239,6 +243,7 @@ async function checkResponses(
     };
   }
 
+  const reviewerName = env.REVIEWER_NAME || "the reviewer";
   return {
     content: [
       {
@@ -246,8 +251,7 @@ async function checkResponses(
         text: JSON.stringify(
           {
             new_replies: newReplies,
-            instruction:
-              "Present each reply to Mickey verbatim, framed as 'Sam suggests: …'. Ask her to approve, modify, or reject before acting.",
+            instruction: `Present each reply to the user verbatim, attributed as '${reviewerName}: "<reply text>"'. Ask them to approve, modify, or reject before acting.`,
           },
           null,
           2,

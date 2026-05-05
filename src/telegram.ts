@@ -110,7 +110,7 @@ export async function handleTelegramWebhook(req: Request, env: Env): Promise<Res
     issue = await getLatestOpenIssue(env);
   }
   if (!issue) {
-    await tgSendMessage(env, chatId, "No open issue to attribute this reply to. Mickey will need to escalate first.");
+    await tgSendMessage(env, chatId, "No open issue to attribute this reply to. The user will need to escalate first.");
     return new Response("ok");
   }
 
@@ -123,7 +123,7 @@ export async function handleTelegramWebhook(req: Request, env: Env): Promise<Res
   });
   await putIssue(env, issue);
 
-  await tgSendMessage(env, chatId, `📥 Saved reply for ${issue.id}. Mickey's Claude will pick it up on the next check.`, {
+  await tgSendMessage(env, chatId, `📥 Saved reply for ${issue.id}. ${issue.account}'s Claude will pick it up on the next check.`, {
     reply_to_message_id: msg.message_id,
   });
 
@@ -156,7 +156,7 @@ async function handleStart(env: Env, chatId: string, text: string): Promise<Resp
 
 function helpText(): string {
   return [
-    "I'll forward escalations from Mickey's Claude here.",
+    "I'll forward escalations from connected users' Claude sessions here.",
     "",
     "• Reply to any escalation to send guidance back.",
     "• A plain message attaches to the most recent open issue.",
