@@ -12,6 +12,16 @@ export async function getAccountByToken(env: Env, token: string): Promise<Accoun
   return raw ? (JSON.parse(raw) as Account) : null;
 }
 
+export async function listAccounts(env: Env, limit = 100): Promise<Account[]> {
+  const list = await env.PONY_KV.list({ prefix: ACCOUNT_PREFIX, limit });
+  const accounts: Account[] = [];
+  for (const key of list.keys) {
+    const raw = await env.PONY_KV.get(key.name);
+    if (raw) accounts.push(JSON.parse(raw) as Account);
+  }
+  return accounts.sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export async function getRegisteredChatId(env: Env): Promise<string | null> {
   return env.PONY_KV.get(CHAT_ID_KEY);
 }

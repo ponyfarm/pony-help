@@ -23,12 +23,10 @@ const SERVER_INFO = {
 
 export async function handleMcpRequest(req: Request, env: Env): Promise<Response> {
   if (req.method === "GET") {
-    return new Response("pony-help MCP — POST JSON-RPC to this endpoint", {
-      headers: { "content-type": "text/plain" },
-    });
+    return methodNotAllowed();
   }
   if (req.method !== "POST") {
-    return new Response("method not allowed", { status: 405 });
+    return methodNotAllowed();
   }
 
   const account = await authenticate(req, env);
@@ -67,6 +65,13 @@ export async function handleMcpRequest(req: Request, env: Env): Promise<Response
       "content-type": "application/json",
       "mcp-protocol-version": env.PROTOCOL_VERSION,
     },
+  });
+}
+
+function methodNotAllowed(): Response {
+  return new Response("method not allowed", {
+    status: 405,
+    headers: { allow: "POST", "content-type": "text/plain" },
   });
 }
 

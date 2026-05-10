@@ -166,6 +166,16 @@ curl -s https://pony-help.<subdomain>.workers.dev/health
 npx wrangler tail
 ```
 
+Telegram admin commands from the claimed reviewer chat:
+
+```text
+/status          # bot state, issue counts, pending replies
+/issues [limit]  # recent issues, default 5, max 10
+/issue <id>      # full state for one issue
+/accounts        # registered account names, without bearer tokens
+/help            # command list
+```
+
 Revoke a user:
 
 ```bash
