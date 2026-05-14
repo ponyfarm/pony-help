@@ -112,7 +112,14 @@ npm run accounts:mint -- "<their-name>"
 
 It prints a token. **Copy it now — it can't be recovered.** This token is what their Claude uses to authenticate. Their name appears on every escalation in your Telegram so you know who's asking.
 
-To revoke later:
+After the Telegram bot is claimed, you can also mint or rotate a helpee connection directly from Telegram:
+
+```text
+/connect <their-name>    # mint a fresh connection message
+/reconnect <their-name>  # revoke existing tokens for that name, then mint a fresh connection message
+```
+
+To revoke later, either use Telegram (`/revoke <their-name>`) or delete a specific token key:
 
 ```bash
 npx wrangler kv key delete --binding=PONY_KV "account:<token>"
@@ -172,7 +179,11 @@ Telegram admin commands from the claimed reviewer chat:
 /status          # bot state, issue counts, pending replies
 /issues [limit]  # recent issues, default 5, max 10
 /issue <id>      # full state for one issue
-/accounts        # registered account names, without bearer tokens
+/accounts        # registered account names and active token counts, without bearer tokens
+/connect <name>  # mint a Claude connection message; existing tokens stay active
+/reconnect <name> # revoke tokens for that exact name and mint a fresh connection message
+/revoke <name>   # revoke all active tokens for that exact name
+/manage          # account management command summary
 /help            # command list
 ```
 

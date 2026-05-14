@@ -36,3 +36,8 @@ export interface Account {
   name: string;
   created_at: number;
 }
+
+export interface AccountRecord {
+  token: string;
+  account: Account;
+}
