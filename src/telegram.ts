@@ -172,12 +172,25 @@ async function handleCommand(env: Env, chatId: string, text: string, mcpUrl: str
 }
 
 function parseCommand(text: string): { command: string; arg: string | undefined } {
-  const match = text.trim().match(/^(\S+)(?:\s+([\s\S]+))?$/);
-  const rawCommand = match?.[1] ?? "";
+  const trimmed = text.trim();
+  const splitAt = firstWhitespaceIndex(trimmed);
+  const rawCommand = splitAt === -1 ? trimmed : trimmed.slice(0, splitAt);
+  const arg = splitAt === -1 ? undefined : trimmed.slice(splitAt).trim();
   return {
     command: rawCommand.split("@", 1)[0].toLowerCase(),
-    arg: match?.[2]?.trim(),
+    arg,
   };
+}
+
+function firstWhitespaceIndex(value: string): number {
+  for (let i = 0; i < value.length; i += 1) {
+    if (isAsciiWhitespace(value.charCodeAt(i))) return i;
+  }
+  return -1;
+}
+
+function isAsciiWhitespace(code: number): boolean {
+  return code === 9 || code === 10 || code === 11 || code === 12 || code === 13 || code === 32;
 }
 
 function deriveMcpUrl(webhookUrl: string): string {
@@ -193,8 +206,7 @@ function deriveMcpUrl(webhookUrl: string): string {
 
 async function handleStart(env: Env, chatId: string, text: string): Promise<Response> {
   const existing = await getRegisteredChatId(env);
-  const parts = text.split(/\s+/);
-  const token = parts[1];
+  const { arg: token } = parseCommand(text);
 
   if (existing) {
     if (existing === chatId) {
