@@ -1,12 +1,14 @@
 import type { Env, Issue } from "./types";
 import {
+  deleteAccount,
   getIssue,
   getRegisteredChatId,
   indexTelegramMessage,
+  listAccountRecords,
   lookupIssueByTelegramMessage,
   getLatestOpenIssue,
-  listAccounts,
   listIssues,
+  putAccount,
   putIssue,
   setRegisteredChatId,
 } from "./kv";
@@ -86,6 +88,7 @@ export async function handleTelegramWebhook(req: Request, env: Env): Promise<Res
   const chatId = String(msg.chat.id);
   const text = msg.text.trim();
   const fromName = msg.from?.username || msg.from?.first_name || "user";
+  const mcpUrl = deriveMcpUrl(req.url);
 
   if (text.startsWith("/start")) {
     return await handleStart(env, chatId, text);
@@ -100,7 +103,7 @@ export async function handleTelegramWebhook(req: Request, env: Env): Promise<Res
     return new Response("ok");
   }
 
-  if (text.startsWith("/") && await handleCommand(env, chatId, text)) {
+  if (text.startsWith("/") && await handleCommand(env, chatId, text, mcpUrl)) {
     return new Response("ok");
   }
 
@@ -132,13 +135,15 @@ export async function handleTelegramWebhook(req: Request, env: Env): Promise<Res
   return new Response("ok");
 }
 
-async function handleCommand(env: Env, chatId: string, text: string): Promise<boolean> {
-  const [rawCommand, arg] = text.split(/\s+/, 2);
-  const command = rawCommand.split("@", 1)[0].toLowerCase();
+async function handleCommand(env: Env, chatId: string, text: string, mcpUrl: string): Promise<boolean> {
+  const { command, arg } = parseCommand(text);
 
   switch (command) {
     case "/help":
       await tgSendMessage(env, chatId, helpText());
+      return true;
+    case "/manage":
+      await tgSendMessage(env, chatId, manageText());
       return true;
     case "/status":
       await tgSendMessage(env, chatId, await statusText(env));
@@ -152,15 +157,56 @@ async function handleCommand(env: Env, chatId: string, text: string): Promise<bo
     case "/accounts":
       await tgSendMessage(env, chatId, await accountsText(env));
       return true;
+    case "/connect":
+      await tgSendMessage(env, chatId, await connectText(env, arg, mcpUrl));
+      return true;
+    case "/reconnect":
+      await tgSendMessage(env, chatId, await reconnectText(env, arg, mcpUrl));
+      return true;
+    case "/revoke":
+      await tgSendMessage(env, chatId, await revokeText(env, arg));
+      return true;
     default:
       return false;
   }
 }
 
+function parseCommand(text: string): { command: string; arg: string | undefined } {
+  const trimmed = text.trim();
+  const splitAt = firstWhitespaceIndex(trimmed);
+  const rawCommand = splitAt === -1 ? trimmed : trimmed.slice(0, splitAt);
+  const arg = splitAt === -1 ? undefined : trimmed.slice(splitAt).trim();
+  return {
+    command: rawCommand.split("@", 1)[0].toLowerCase(),
+    arg,
+  };
+}
+
+function firstWhitespaceIndex(value: string): number {
+  for (let i = 0; i < value.length; i += 1) {
+    if (isAsciiWhitespace(value.charCodeAt(i))) return i;
+  }
+  return -1;
+}
+
+function isAsciiWhitespace(code: number): boolean {
+  return code === 9 || code === 10 || code === 11 || code === 12 || code === 13 || code === 32;
+}
+
+function deriveMcpUrl(webhookUrl: string): string {
+  const url = new URL(webhookUrl);
+  const suffix = "/tg/webhook";
+  url.pathname = url.pathname.endsWith(suffix)
+    ? `${url.pathname.slice(0, -suffix.length)}/mcp`
+    : "/mcp";
+  url.search = "";
+  url.hash = "";
+  return url.toString();
+}
+
 async function handleStart(env: Env, chatId: string, text: string): Promise<Response> {
   const existing = await getRegisteredChatId(env);
-  const parts = text.split(/\s+/);
-  const token = parts[1];
+  const { arg: token } = parseCommand(text);
 
   if (existing) {
     if (existing === chatId) {
@@ -191,14 +237,31 @@ function helpText(): string {
     "• /issues [limit] — recent issues",
     "• /issue <id> — one issue's detail",
     "• /accounts — registered account names",
+    "• /connect <name> — mint a Claude connection message",
+    "• /reconnect <name> — rotate a helpee's connection message",
+    "• /revoke <name> — revoke a helpee's active tokens",
+    "• /manage — account management commands",
     "• /help — this message",
   ].join("\n");
 }
 
+function manageText(): string {
+  return [
+    "pony-help management",
+    "",
+    "• /connect <name> — mint a new connection message. Existing tokens stay active.",
+    "• /reconnect <name> — revoke existing tokens for that exact name and mint a fresh connection message.",
+    "• /revoke <name> — revoke all active tokens for that exact name.",
+    "• /accounts — list helpees and active token counts.",
+    "",
+    "Names can include spaces. Send generated connection messages to helpees over a secure channel.",
+  ].join("\n");
+}
+
 async function statusText(env: Env): Promise<string> {
-  const [issues, accounts, latestOpen] = await Promise.all([
+  const [issues, accountRecords, latestOpen] = await Promise.all([
     listIssues(env),
-    listAccounts(env),
+    listAccountRecords(env),
     getLatestOpenIssue(env),
   ]);
   const open = issues.filter((issue) => issue.status === "open");
@@ -208,13 +271,14 @@ async function statusText(env: Env): Promise<string> {
     0,
   );
   const latestIssue = issues[0];
+  const helpeeCount = groupAccountRecords(accountRecords).length;
 
   const lines = [
     "pony-help status",
     "",
     `protocol: ${env.PROTOCOL_VERSION}`,
     `reviewer: ${env.REVIEWER_NAME || "the reviewer"}`,
-    `accounts: ${accounts.length}`,
+    `accounts: ${helpeeCount} helpees, ${accountRecords.length} active tokens`,
     `issues: ${issues.length} total, ${open.length} open, ${resolved.length} resolved`,
     `pending replies: ${pendingReplies}`,
   ];
@@ -270,20 +334,132 @@ async function issueText(env: Env, id?: string): Promise<string> {
 }
 
 async function accountsText(env: Env): Promise<string> {
-  const accounts = await listAccounts(env);
-  if (accounts.length === 0) return "No accounts found.";
+  const records = await listAccountRecords(env);
+  if (records.length === 0) return "No accounts found.";
+
+  const groups = groupAccountRecords(records);
 
   return [
-    `accounts (${accounts.length})`,
+    `accounts (${groups.length} helpees, ${records.length} active tokens)`,
     "",
-    ...accounts.map((account) => `• ${account.name} — created ${formatTs(account.created_at)}`),
+    ...groups.map((group) => {
+      const plural = group.count === 1 ? "token" : "tokens";
+      return `• ${group.name} — ${group.count} active ${plural}, newest ${formatTs(group.newestCreatedAt)}`;
+    }),
   ].join("\n");
+}
+
+async function connectText(env: Env, rawName: string | undefined, mcpUrl: string): Promise<string> {
+  const name = cleanAccountName(rawName);
+  if (!name) return "Usage: /connect <name>";
+
+  const { token } = await mintAccount(env, name);
+  return [
+    `Minted a new pony-help connection for ${name}. Existing tokens for this name are still active.`,
+    "",
+    connectionMessage(name, token, mcpUrl),
+  ].join("\n");
+}
+
+async function reconnectText(env: Env, rawName: string | undefined, mcpUrl: string): Promise<string> {
+  const name = cleanAccountName(rawName);
+  if (!name) return "Usage: /reconnect <name>";
+
+  const revoked = await revokeAccountsByName(env, name);
+  const { token } = await mintAccount(env, name);
+  const tokenWord = revoked === 1 ? "token" : "tokens";
+  return [
+    `Rotated pony-help for ${name}. Revoked ${revoked} old ${tokenWord}.`,
+    "",
+    connectionMessage(name, token, mcpUrl),
+  ].join("\n");
+}
+
+async function revokeText(env: Env, rawName: string | undefined): Promise<string> {
+  const name = cleanAccountName(rawName);
+  if (!name) return "Usage: /revoke <name>";
+
+  const revoked = await revokeAccountsByName(env, name);
+  if (revoked === 0) return `No active tokens found for ${name}.`;
+  const tokenWord = revoked === 1 ? "token" : "tokens";
+  return `Revoked ${revoked} active ${tokenWord} for ${name}.`;
+}
+
+async function mintAccount(env: Env, name: string): Promise<{ token: string }> {
+  const token = makeToken();
+  await putAccount(env, token, { name, created_at: Date.now() });
+  return { token };
+}
+
+async function revokeAccountsByName(env: Env, name: string): Promise<number> {
+  const target = normalizeAccountName(name);
+  const records = await listAccountRecords(env);
+  const matches = records.filter((record) => normalizeAccountName(record.account.name) === target);
+  await Promise.all(matches.map((record) => deleteAccount(env, record.token)));
+  return matches.length;
+}
+
+function connectionMessage(name: string, token: string, mcpUrl: string): string {
+  return [
+    "Send this to the helpee:",
+    "",
+    "Hey Claude — please set up the `pony-help` MCP server so you can escalate issues to my reviewer over Telegram.",
+    "",
+    "Run this command:",
+    "```",
+    `claude mcp add --transport http pony-help ${mcpUrl} --header "Authorization: Bearer ${token}"`,
+    "```",
+    "",
+    "Then list the tools from `pony-help` and confirm you see `escalate_issue`, `ask_reviewer`, `check_responses`, and `mark_resolved`.",
+    "",
+    "If `pony-help` already exists on this Claude instance, remove it first with `claude mcp remove pony-help`, then run the add command again.",
+    "",
+    `Connection owner: ${name}`,
+  ].join("\n");
+}
+
+function groupAccountRecords(records: Awaited<ReturnType<typeof listAccountRecords>>): Array<{
+  name: string;
+  count: number;
+  newestCreatedAt: number;
+}> {
+  const groups = new Map<string, { name: string; count: number; newestCreatedAt: number }>();
+  for (const record of records) {
+    const normalized = normalizeAccountName(record.account.name);
+    const existing = groups.get(normalized);
+    if (existing) {
+      existing.count += 1;
+      existing.newestCreatedAt = Math.max(existing.newestCreatedAt, record.account.created_at);
+    } else {
+      groups.set(normalized, {
+        name: record.account.name,
+        count: 1,
+        newestCreatedAt: record.account.created_at,
+      });
+    }
+  }
+  return Array.from(groups.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function cleanAccountName(rawName: string | undefined): string | null {
+  const name = rawName?.trim().replace(/\s+/g, " ");
+  if (!name) return null;
+  return name.slice(0, 80);
+}
+
+function normalizeAccountName(name: string): string {
+  return name.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 function parseLimit(raw: string | undefined): number {
   const parsed = Number(raw);
   if (!Number.isFinite(parsed)) return 5;
   return Math.min(Math.max(Math.floor(parsed), 1), 10);
+}
+
+function makeToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function issueLine(issue: Issue): string {

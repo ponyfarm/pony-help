@@ -1,4 +1,4 @@
-import type { Account, Env, Issue } from "./types";
+import type { Account, AccountRecord, Env, Issue } from "./types";
 
 const ISSUE_PREFIX = "issue:";
 const TG_MSG_INDEX_PREFIX = "tgmsg:";
@@ -12,14 +12,41 @@ export async function getAccountByToken(env: Env, token: string): Promise<Accoun
   return raw ? (JSON.parse(raw) as Account) : null;
 }
 
-export async function listAccounts(env: Env, limit = 100): Promise<Account[]> {
-  const list = await env.PONY_KV.list({ prefix: ACCOUNT_PREFIX, limit });
-  const accounts: Account[] = [];
-  for (const key of list.keys) {
-    const raw = await env.PONY_KV.get(key.name);
-    if (raw) accounts.push(JSON.parse(raw) as Account);
+export async function putAccount(env: Env, token: string, account: Account): Promise<void> {
+  await env.PONY_KV.put(`${ACCOUNT_PREFIX}${token}`, JSON.stringify(account));
+}
+
+export async function deleteAccount(env: Env, token: string): Promise<void> {
+  await env.PONY_KV.delete(`${ACCOUNT_PREFIX}${token}`);
+}
+
+export async function listAccountRecords(env: Env, limit = 1000): Promise<AccountRecord[]> {
+  const records: AccountRecord[] = [];
+  let cursor: string | undefined;
+
+  while (records.length < limit) {
+    const list = await env.PONY_KV.list({
+      prefix: ACCOUNT_PREFIX,
+      limit: Math.min(1000, limit - records.length),
+      cursor,
+    });
+    for (const key of list.keys) {
+      const raw = await env.PONY_KV.get(key.name);
+      if (!raw) continue;
+      records.push({
+        token: key.name.slice(ACCOUNT_PREFIX.length),
+        account: JSON.parse(raw) as Account,
+      });
+    }
+    if (list.list_complete || !list.cursor) break;
+    cursor = list.cursor;
   }
-  return accounts.sort((a, b) => a.name.localeCompare(b.name));
+  return records.sort((a, b) => a.account.name.localeCompare(b.account.name));
+}
+
+export async function listAccounts(env: Env, limit = 1000): Promise<Account[]> {
+  const records = await listAccountRecords(env, limit);
+  return records.map((record) => record.account);
 }
 
 export async function getRegisteredChatId(env: Env): Promise<string | null> {
