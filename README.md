@@ -17,7 +17,7 @@ Four MCP tools, exposed at `https://<worker>/mcp`:
 
 | Tool | When the LLM should call it |
 | --- | --- |
-| `escalate_issue` | Auto-fired when stuck, blocked, ambiguous, or about to do something destructive. Returns an `issue_id` immediately. |
+| `escalate_issue` | Auto-fired when stuck, blocked, ambiguous, or about to do something destructive. Returns a `HELP-<number>` `issue_id` immediately. |
 | `ask_reviewer` | Explicit, user-initiated — "ask my reviewer". Same plumbing as `escalate_issue`. |
 | `check_responses` | Polls for new replies. Should be called between steps after escalating. |
 | `mark_resolved` | Closes the loop and sends a ✅ Telegram follow-up. |
@@ -152,7 +152,7 @@ Replace `<subdomain>` and `<USER_TOKEN>` before sending. Use a secure channel �
 
 When you reply in Telegram:
 
-- **Replying to a specific escalation message** — answer attaches to that issue (best UX).
+- **Replying to a specific escalation message** — answer attaches to that issue (best UX). If a long issue is split across multiple Telegram messages, replying to any part attaches to the same issue.
 - **Plain message** — attaches to the most recent open issue across all users.
 
 Each new reply is delivered exactly once, the next time the user's Claude calls `check_responses`.
@@ -164,7 +164,7 @@ Each new reply is delivered exactly once, the next time the user's Claude calls 
 npm run accounts:mint -- "Alex"
 
 # See recent issues (debug)
-curl -s https://pony-help.<subdomain>.workers.dev/issues | jq
+curl -s 'https://pony-help.<subdomain>.workers.dev/issues?status=open&limit=25' | jq
 
 # Health check
 curl -s https://pony-help.<subdomain>.workers.dev/health
@@ -177,8 +177,8 @@ Telegram admin commands from the claimed reviewer chat:
 
 ```text
 /status          # bot state, issue counts, pending replies
-/issues [limit]  # recent issues, default 5, max 10
-/issue <id>      # full state for one issue
+/issues [status] [limit] # recent issues; status is open, resolved, or all
+/issue <id>      # full state for one issue, e.g. /issue HELP-12
 /accounts        # registered account names and active token counts, without bearer tokens
 /connect <name>  # mint a Claude connection message; existing tokens stay active
 /reconnect <name> # revoke tokens for that exact name and mint a fresh connection message

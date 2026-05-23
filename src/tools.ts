@@ -3,6 +3,7 @@ import {
   getIssue,
   getRegisteredChatId,
   listIssues,
+  nextIssueId,
   putIssue,
   setLatestOpenIssue,
 } from "./kv";
@@ -89,7 +90,7 @@ export const TOOL_DEFS = [
       properties: {
         issue_id: {
           type: "string",
-          description: "Optional. Limit to a single issue. Omit to fetch replies across all open issues.",
+          description: "Optional. Limit to a single issue, for example HELP-12. Omit to fetch replies across all open issues.",
         },
       },
     },
@@ -100,7 +101,7 @@ export const TOOL_DEFS = [
     inputSchema: {
       type: "object",
       properties: {
-        issue_id: { type: "string", description: "The id returned by escalate_issue or ask_reviewer." },
+        issue_id: { type: "string", description: "The id returned by escalate_issue or ask_reviewer, for example HELP-12." },
         outcome: { type: "string", description: "One sentence on how it was resolved." },
       },
       required: ["issue_id", "outcome"],
@@ -165,7 +166,7 @@ async function escalateIssue(
   }
 
   const issue: Issue = {
-    id: makeId(),
+    id: await nextIssueId(env),
     account: account.name,
     summary,
     context: typeof args.context === "string" ? args.context : undefined,
@@ -288,11 +289,6 @@ async function markResolved(
   await notifyResolution(env, issue);
 
   return {
-    content: [{ type: "text", text: JSON.stringify({ issue_id: id, status: "resolved" }, null, 2) }],
+    content: [{ type: "text", text: JSON.stringify({ issue_id: issue.id, status: "resolved" }, null, 2) }],
   };
-}
-
-function makeId(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(6));
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
