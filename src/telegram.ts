@@ -1,4 +1,4 @@
-import type { Env, Issue } from "./types";
+import type { Env, Issue, IssueStatus } from "./types";
 import {
   deleteAccount,
   getIssue,
@@ -14,10 +14,13 @@ import {
 } from "./kv";
 
 const TG_API = "https://api.telegram.org";
+const TELEGRAM_TEXT_LIMIT = 4096;
+const TELEGRAM_CHUNK_BODY_LIMIT = 3900;
 
 interface TelegramSendResult {
   ok: boolean;
   result?: { message_id: number };
+  results?: Array<{ message_id: number }>;
   description?: string;
 }
 
@@ -38,6 +41,34 @@ export async function tgSendMessage(
   text: string,
   opts: { reply_to_message_id?: number; parse_mode?: "MarkdownV2" | "HTML" } = {},
 ): Promise<TelegramSendResult> {
+  const chunks = splitTelegramText(text);
+  const results: Array<{ message_id: number }> = [];
+
+  for (let i = 0; i < chunks.length; i += 1) {
+    const chunkText = chunks.length === 1
+      ? chunks[i]
+      : `Part ${i + 1}/${chunks.length}\n\n${chunks[i]}`;
+    const result = await tgSendSingleMessage(env, chatId, chunkText, opts);
+    if (!result.ok) {
+      return {
+        ok: false,
+        result: results[0],
+        results,
+        description: result.description,
+      };
+    }
+    if (result.result) results.push(result.result);
+  }
+
+  return { ok: true, result: results[0], results };
+}
+
+async function tgSendSingleMessage(
+  env: Env,
+  chatId: string,
+  text: string,
+  opts: { reply_to_message_id?: number; parse_mode?: "MarkdownV2" | "HTML" },
+): Promise<TelegramSendResult> {
   const res = await fetch(`${TG_API}/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -48,6 +79,34 @@ export async function tgSendMessage(
     }),
   });
   return (await res.json()) as TelegramSendResult;
+}
+
+function splitTelegramText(text: string): string[] {
+  if (text.length === 0) return [" "];
+  if (text.length <= TELEGRAM_TEXT_LIMIT) return [text];
+
+  const chunks: string[] = [];
+  let start = 0;
+  while (start < text.length) {
+    const maxEnd = Math.min(start + TELEGRAM_CHUNK_BODY_LIMIT, text.length);
+    const end = findTelegramChunkEnd(text, start, maxEnd);
+    chunks.push(text.slice(start, end));
+    start = end;
+  }
+  return chunks;
+}
+
+function findTelegramChunkEnd(text: string, start: number, maxEnd: number): number {
+  if (maxEnd >= text.length) return text.length;
+
+  const minUsefulEnd = start + Math.floor((maxEnd - start) / 2);
+  const newline = text.lastIndexOf("\n", maxEnd);
+  if (newline > minUsefulEnd) return newline + 1;
+
+  const space = text.lastIndexOf(" ", maxEnd);
+  if (space > minUsefulEnd) return space + 1;
+
+  return maxEnd;
 }
 
 export function formatEscalation(issue: Issue): string {
@@ -149,7 +208,7 @@ async function handleCommand(env: Env, chatId: string, text: string, mcpUrl: str
       await tgSendMessage(env, chatId, await statusText(env));
       return true;
     case "/issues":
-      await tgSendMessage(env, chatId, await issuesText(env, parseLimit(arg)));
+      await tgSendMessage(env, chatId, await issuesText(env, parseIssuesArgs(arg)));
       return true;
     case "/issue":
       await tgSendMessage(env, chatId, await issueText(env, arg));
@@ -234,7 +293,7 @@ function helpText(): string {
     "• Reply to any escalation to send guidance back.",
     "• A plain message attaches to the most recent open issue.",
     "• /status — current bot and issue state",
-    "• /issues [limit] — recent issues",
+    "• /issues [status] [limit] — recent issues",
     "• /issue <id> — one issue's detail",
     "• /accounts — registered account names",
     "• /connect <name> — mint a Claude connection message",
@@ -293,12 +352,13 @@ async function statusText(env: Env): Promise<string> {
   return lines.join("\n");
 }
 
-async function issuesText(env: Env, limit: number): Promise<string> {
-  const issues = await listIssues(env, limit);
-  if (issues.length === 0) return "No issues found.";
+async function issuesText(env: Env, args: IssuesArgs): Promise<string> {
+  const issues = await listIssues(env, args.limit, args.status);
+  const statusLabel = args.status ? `${args.status} ` : "";
+  if (issues.length === 0) return `No ${statusLabel}issues found.`;
 
   return [
-    `recent issues (${issues.length})`,
+    `recent ${statusLabel}issues (${issues.length})`,
     "",
     ...issues.map(issueLine),
   ].join("\n");
@@ -324,11 +384,11 @@ async function issueText(env: Env, id?: string): Promise<string> {
     `telegram message: ${issue.telegram_message_id ?? "none"}`,
     `replies: ${issue.replies.length} total, ${pendingReplies} pending delivery`,
     "",
-    `summary: ${clip(issue.summary, 600)}`,
+    `summary: ${issue.summary}`,
   ];
 
-  if (issue.outcome) lines.push("", `outcome: ${clip(issue.outcome, 600)}`);
-  if (issue.context) lines.push("", "context:", clip(issue.context, 1200));
+  if (issue.outcome) lines.push("", `outcome: ${issue.outcome}`);
+  if (issue.context) lines.push("", "context:", issue.context);
 
   return lines.join("\n");
 }
@@ -451,10 +511,50 @@ function normalizeAccountName(name: string): string {
   return name.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-function parseLimit(raw: string | undefined): number {
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed)) return 5;
-  return Math.min(Math.max(Math.floor(parsed), 1), 10);
+interface IssuesArgs {
+  limit: number;
+  status?: IssueStatus;
+}
+
+function parseIssuesArgs(raw: string | undefined): IssuesArgs {
+  const args = splitFields(raw ?? "");
+  let limit = 5;
+  let status: IssueStatus | undefined;
+
+  for (const arg of args) {
+    const lower = arg.toLowerCase();
+    if (lower === "open" || lower === "resolved") {
+      status = lower;
+      continue;
+    }
+    if (lower === "all") {
+      status = undefined;
+      continue;
+    }
+    const parsed = Number(arg);
+    if (Number.isFinite(parsed)) limit = Math.min(Math.max(Math.floor(parsed), 1), 10);
+  }
+
+  return { limit, status };
+}
+
+function splitFields(value: string): string[] {
+  const fields: string[] = [];
+  let start: number | undefined;
+
+  for (let i = 0; i < value.length; i += 1) {
+    if (isAsciiWhitespace(value.charCodeAt(i))) {
+      if (start !== undefined) {
+        fields.push(value.slice(start, i));
+        start = undefined;
+      }
+    } else if (start === undefined) {
+      start = i;
+    }
+  }
+
+  if (start !== undefined) fields.push(value.slice(start));
+  return fields;
 }
 
 function makeToken(): string {
@@ -483,10 +583,11 @@ export async function notifyEscalation(env: Env, issue: Issue): Promise<void> {
   const chatId = await getRegisteredChatId(env);
   if (!chatId) return;
   const result = await tgSendMessage(env, chatId, formatEscalation(issue));
-  if (result.ok && result.result) {
-    issue.telegram_message_id = result.result.message_id;
+  const messageIds = result.results?.map((message) => message.message_id) ?? [];
+  if (messageIds.length > 0) {
+    issue.telegram_message_id = messageIds[0];
     await putIssue(env, issue);
-    await indexTelegramMessage(env, result.result.message_id, issue.id);
+    await Promise.all(messageIds.map((messageId) => indexTelegramMessage(env, messageId, issue.id)));
   }
 }
 
